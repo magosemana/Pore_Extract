@@ -68,8 +68,7 @@ def DeleteBorderElements(data_pore,data_throat,alpha):
 
     data_Pore=UpdateCoordNumber(data_Pore,data_Throats)
     
-    return [data_Pore,data_Throats]
-        
+    return [data_Pore,data_Throats]       
 
 def N_components(points,alpha):
     mx=min(points[:,0])
@@ -116,7 +115,6 @@ def N_components(points,alpha):
     
     return N_comp
 
-
 def GetThroatInfo(path,alpha):
     
     surf=pd.read_csv(path+'_SURF.dat',sep='\s+',names=["t_id","x","y","z"])
@@ -144,7 +142,6 @@ def GetThroatInfo(path,alpha):
         #final.loc[i,"N_components"]=N_components(temp,alpha)
     
     return final
- 
 
 def GetIndexAndDataFromPoresToReassign(data_pore,data_throat,Min,Max,criterion): #criterion="closest" or "biggest"
 
@@ -310,10 +307,8 @@ def ReassignPoreAndThroats(Pore_connection,data_pore,data_throat):
     data_pore_reassigned=UpdateCoordNumber(data_pore_reassigned,data_throat_reassigned)
     
     return[data_pore_reassigned,data_throat_reassigned]
-
-    
+   
 def plotthroat(vox_size,surf,data_throat,tab_id,alpha):
-
     for j in tab_id:
 
         #surf=pd.read_csv(path+'_SURF.dat',sep='\s+',names=["t_id","x","y","z"])
@@ -321,7 +316,6 @@ def plotthroat(vox_size,surf,data_throat,tab_id,alpha):
         uniq=np.unique(index)
         temp=surf[index==np.unique(index)[j-1]].values[:,1:4]
         points=temp
-
 
         mx=min(points[:,0])
         my=min(points[:,1])
@@ -336,7 +330,6 @@ def plotthroat(vox_size,surf,data_throat,tab_id,alpha):
 
         for i in range(len(points)):
             grid[points2[0][i],points2[1][i],points2[2][i]]=1
-
 
         # create data
         data2=grid;
@@ -368,12 +361,9 @@ def plotthroat(vox_size,surf,data_throat,tab_id,alpha):
         for k in range(len(n_comp)):
             tab[k]=(df['c'].values==n_comp[k]).sum()
        
-       
-       
         princ_comp=np.argmax(tab)
         delete=n_comp[tab<tab[princ_comp]*alpha]  #If components have less than 10% of the size of the princ_component, we delete it
         df=df[~df['c'].isin(delete)]
-
 
         fig = plt.figure(figsize=(max(Mx-mx,My-my,Mz-mz)+1,max(Mx-mx,My-my,Mz-mz)+1))
         ax = fig.add_subplot(111, projection='3d')
@@ -390,8 +380,6 @@ def plotthroat(vox_size,surf,data_throat,tab_id,alpha):
         z = r*np.cos(v)
 
         ax.plot_wireframe(x+c[0], y+c[1], z+c[2], color='b', alpha=0.8)
-
-
 
         cmhot = plt.get_cmap("Dark2")
         ax.scatter((df['x']+mx)*vox_size,(df['y']+my)*vox_size, (df['z']+mz)*vox_size, c=df['c'], s=20, cmap=cmhot)

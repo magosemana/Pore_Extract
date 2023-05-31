@@ -16,7 +16,12 @@ from sudodem._superquadrics_utils import *
 #from pathlib import Path
 
 pathScript=str(sys.argv[0])
-pathScript=pathScript[0:(pathScript.rfind('/'))]
+chk=pathScript.rfind('/')
+if chk>0:
+    pathScript=pathScript[0:chk]
+else:
+    pathScript=os.getcwd()+'/'
+
 sys.path.append(pathScript)
 print('\n')
 print('Execution path : '+ pathScript)
@@ -25,20 +30,27 @@ print('')
 from functions  import *
 from functionsJ import *
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-###################################       Variables      ####################################
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-voxel_fnm="p_s_vox_20_loose_cnr_ellipsoid"
-pathFile=""
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#################################       Variables      ##################################
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#################################       Load pnExtract      ##################################
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+voxel_fnm="p_s_5cm_loose_cnr_ellipsoid"     #voxel file name
+voxel_cut=[0.00346102,0.0347862,0.0337112]  #relative position of pnExtract results
+voxel=2.083333e-05                          #dimension of a voxel
+voxel_multiplier=5                          #multiply voxel dimension (for testing)
+pathFile=""                                 #path to voxel files (if needed)
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+###############################       Load pnExtract      ###############################
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 #if any of the strings is empty ask the user for new place
 if not pathFile:
      pathFile=pathScript
-#prepare path to save results
+#prepare path to save results, add folder if it does not exist
 svPath=os.path.join(pathFile,"Pore_Results")
+if not os.path.exists(svPath):
+        os.mkdir(svPath)
 #check if pnExtract summary files exists
 t_name=os.path.join(svPath,"throat_to_DEM.dat")
 p_name=os.path.join(svPath,"pore_to_DEM.dat")
@@ -59,89 +71,101 @@ else:
     #delete pores in the 0.1 part extremes of the specimen
     [p_data,data_throat_noborder]=DeleteBorderElements(data_pore,data_throat,0.1)
     t_data=data_throat_noborder[data_throat_noborder["Throat_Radius"]>9.6*0.000001]  #delete all the small fine particles that are artifical (less than Do/6.5)
-    #calculate throat normals and add to the file
-    throat_normal=GetThroatInfo(os.path.join(pathFile,voxel_fnm),0.1)
-    throat_normal.rename(columns = {'t_id':'Throat_index'}, inplace = True)
-    t_data=t_data.merge(throat_normal)
+    #Check if throath normal exists
+    if os.path.exists(os.path.join(pathFile,voxel_fnm+'_SURF.dat')):
+        #calculate throat normals and add to the file
+        throat_normal=GetThroatInfo(os.path.join(pathFile,voxel_fnm),0.1)
+        #rename t_id column to append be able to join table to t_data
+        throat_normal.rename(columns = {'t_id':'Throat_index'}, inplace = True)
+        t_data=t_data.merge(throat_normal)
+    else:
+        print("File "+voxel_fnm+"_SURF.dat was not found. Constriction normals will be attributed as nul vectors.")
+        #if file do not exist create zero vector in the following properties : "norm_vector_x","norm_vector_y","norm_vector_z"
+        z=np.zeros([len(t_data)])
+        t_data["norm_vector_x"]=z
+        t_data["norm_vector_y"]=z
+        t_data["norm_vector_z"]=z
+
+    #update pore and throat data using the voxel_cut data
+    t_data['t_x']=t_data.t_x.values+voxel_cut[0]
+    t_data['t_y']=t_data.t_y.values+voxel_cut[1]
+    t_data['t_z']=t_data.t_z.values+voxel_cut[2]
+    p_data['x']=p_data.x.values+voxel_cut[0]
+    p_data['y']=p_data.y.values+voxel_cut[1]
+    p_data['z']=p_data.z.values+voxel_cut[2]
     #save pore data summary files as csv  (coma separated values)
     t_data.to_csv(t_name,index=False)
     p_data.to_csv(p_name,index=False)
-    #delete data that will not be needed
-    del data_throat_noborder, data_pore, data_throat
+    #delete tables(DataFrame) that are no longer needed
+    del data_throat_noborder, data_pore, data_throat, throat_normal
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#######################################       DEM      #######################################
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+####################################       DEM      #####################################
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 print("Prepare DEM data")
 ### DEM BASE DATA
 #Mechanical parametrs
 normal_stiffness=5.65e5                
 tangent_stiffness=5.65e5    
 friction_angle=math.atan(0.00)  #input
-density=26500000 # to increase the time step *e4 for fine particles
+density=26.5e6 # to increase the time step *e4 for fine particles
 mat_superellipse= SuperquadricsMat(label="mat1",Kn=normal_stiffness,Ks=tangent_stiffness,betan=0.61,betas=0.61,frictionAngle=friction_angle,density=density)   
 O.materials.append(mat_superellipse)
 
-#Dimensions of the box
-lintmax=0.020
-bo_de=lintmax/2
-width=lintmax*5
-depth=lintmax*5
-height=lintmax*5
+###### Load filter particles ######
 
-### Load filter ###
+    ## Load data
+axis_list= np.load(os.path.join(pathFile,'axis_list.npy'))
+angle_list= np.load(os.path.join(pathFile,'angle_list.npy'))
+position_list= np.load(os.path.join(pathFile,'position_list.npy'))
+rx_list=np.load(os.path.join(pathFile,'rx_list.npy'))
+ry_list=np.load(os.path.join(pathFile,'ry_list.npy'))
+rz_list=np.load(os.path.join(pathFile,'rz_list.npy'))
 
-        ##Load particles
-axis_list= np.load(os.path.join(path,'axis_list.npy'))
-angle_list= np.load(os.path.join(path,'angle_list.npy'))
-position_list= np.load(os.path.join(path,'position_list.npy'))
-rx_list=np.load(os.path.join(path,'rx_list.npy'))
-ry_list=np.load(os.path.join(path,'ry_list.npy'))
-rz_list=np.load(os.path.join(path,'rz_list.npy'))
-zero_list=[]
-one_list=[]
-
-### ALI'S WEIRD WALL DELTION
-number_of_particles=0
-n=0
-for xyz in position_list:
+    ## add particles
+for n in range(len(position_list)):
     body = NewSuperquadrics2(rx_list[n],ry_list[n],rz_list[n],1,1,mat_superellipse,False,False)
     body.state.pos=position_list[n]
     body.state.ori=(axis_list[n],angle_list[n])
     O.bodies.append(body)
-        #body.shape.wire=True
     body.shape.color=(0.5,0.6,0.7)
-        #body.dynamic = False
-    number_of_particles=number_of_particles+1  
-    n=n+1
-print "Number of particles", number_of_particles 
+    body.dynamic = False
+    #body.shape.wire=True
 
-total_bodies=len(O.bodies)
-print "Total_bodies",total_bodies
+    ## count particles
+nb_filter=len(O.bodies)
+print "Number of filter particles",nb_filter
 
-### CONSTRICTION DATA
-c_nb=0
-n=0
-c_radius=t_data.Throat_Radius.values
-c_x=t_data.t_x.values
-c_y=t_data.t_y.values
-c_z=t_data.t_z.values
-
-        #Create speheres where constrictions should be.
-voxel=6.250000e-05
-ratio_i=voxel
-for xyz in c_radius:
-    body = NewSuperquadrics2(c_radius[n]+ratio_i,c_radius[n]+ratio_i,c_radius[n]+ratio_i,1,1,mat_superellipse,False,True)
-    body.state.pos=[c_x[n]+0.0396102,c_y[n]+0.0397862,c_z[n]+0.0387112]
+###### Create constrictions as particles ######
+#Create speheres where constrictions should be.
+vx =voxel*voxel_multiplier
+for t_row in t_data.itertuples():
+    body = NewSuperquadrics2(t_row.Throat_Radius+vx, t_row.Throat_Radius+vx, t_row.Throat_Radius+vx, 1, 1, mat_superellipse, False, True)
+    body.state.pos=[t_row.t_x, t_row.t_y, t_row.t_z]
     O.bodies.append(body)
-    body.shape.wire=False
     body.shape.color=(0.0,0.0,01)
     body.dynamic = False
-    c_nb=c_nb+1  
-    n=n+1
-print "Number of constrictions", c_nb     
+    #body.shape.wire=False
 
-### ENGINE AND RUN
+    #count constrictions
+nb_cons=len(O.bodies)-nb_filter
+print "Number of constrictions", nb_cons
+
+###### Create pores as particles ######
+#Create speheres where pores should be.
+for p_row in p_data.itertuples():
+    body = NewSuperquadrics2(p_row.Pore_radius+vx, p_row.Pore_radius+vx, p_row.Pore_radius+vx, 1, 1, mat_superellipse, False, True)
+    body.state.pos=[p_row.x, p_row.y, p_row.z]
+    O.bodies.append(body)
+    body.shape.color=(0.0,0.0,01)
+    body.dynamic = False
+    #body.shape.wire=False
+
+    #count pore
+nb_pore=len(O.bodies)-nb_cons-nb_filter
+print "Number of pores", nb_pore  
+
+###### Prepare DEM to check for contacts ######
 newton=NewtonIntegrator(damping = 0,gravity=(0.,9.81,0),label="newton",isSuperquadrics=1) # isSuperquadrics: 1 for superquadrics
 
 O.engines=[
@@ -154,18 +178,18 @@ O.engines=[
    newton,
 ]
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#######################################       Run      #######################################
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
 O.dt=0.000000001
 O.run(1,True)
-for i in O.bodies:
-        i.dynamic = False 
 
-constr=constrictionCheck(O, t_data, total_bodies, svPath)
-pore=poreCheck(O, constr, p_data, svPath)
-porePlot(pore)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#####################################       Run      ####################################
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#create contriction objects
+constr=constrictionCheck(O, t_data, nb_filter, nb_cons, svPath)
+#create pore objects
+pore=poreCheck(O, constr, p_data, nb_filter, nb_cons, svPath)
+#plot pore values
+poreResultsPlot(pore)
 
 #Quit SUDODEM
 O.exitNoBacktrace()
